@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { UserPlus, UserCheck, Loader2 } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, collection, query, where, getDocs, orderBy, writeBatch, increment, onSnapshot } from "firebase/firestore";
+import { doc, collection, query, where, orderBy, writeBatch, increment, onSnapshot } from "firebase/firestore";
 
 export default function ProfilePage() {
   const params = useParams<{ userId: string }>();
@@ -24,36 +24,34 @@ export default function ProfilePage() {
   const [isFollowLoading, setIsFollowLoading] = useState(false);
 
   useEffect(() => {
-    if (!params.userId) return;
+    if (!params.userId) {
+        setLoading(false);
+        return;
+    };
 
+    setLoading(true);
+
+    // Listener for User Profile
     const userDocRef = doc(db, "users", params.userId);
     const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
       if (doc.exists()) {
-        setUserProfile({ id: doc.id, ...doc.data() } as UserProfile);
+        const data = doc.data();
+        setUserProfile({
+          id: doc.id,
+          name: data.name ?? 'Unnamed User',
+          email: data.email ?? '',
+          avatarUrl: data.avatarUrl ?? '',
+          bio: data.bio ?? 'No bio yet.',
+          followers: data.followers ?? 0,
+          following: data.following ?? 0,
+        });
       } else {
         setUserProfile(null);
       }
       setLoading(false);
     });
 
-    return () => unsubscribeUser();
-  }, [params.userId]);
-
-
-  useEffect(() => {
-    if (!params.userId || !currentUser) return;
-
-    const followingDocRef = doc(db, "users", currentUser.uid, "following", params.userId);
-    const unsubscribeFollowing = onSnapshot(followingDocRef, (doc) => {
-      setIsFollowing(doc.exists());
-    });
-
-    return () => unsubscribeFollowing();
-  }, [params.userId, currentUser]);
-
-
-  useEffect(() => {
-    if (!params.userId) return;
+    // Listener for Posts
     const postsQuery = query(collection(db, "posts"), where("author.id", "==", params.userId), orderBy("createdAt", "desc"));
     const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
       const userPosts = snapshot.docs.map(doc => ({
@@ -64,8 +62,22 @@ export default function ProfilePage() {
       setPosts(userPosts);
     });
 
-    return () => unsubscribePosts();
+    // Listener for Following Status
+    let unsubscribeFollowing = () => {};
+    if (currentUser && currentUser.uid !== params.userId) {
+        const followingDocRef = doc(db, "users", currentUser.uid, "following", params.userId);
+        unsubscribeFollowing = onSnapshot(followingDocRef, (doc) => {
+            setIsFollowing(doc.exists());
+        });
+    }
+
+    return () => {
+      unsubscribeUser();
+      unsubscribePosts();
+      unsubscribeFollowing();
+    };
   }, [params.userId, currentUser]);
+
 
   const handleFollowToggle = async () => {
     if (!currentUser || isFollowLoading || !params.userId || currentUser.uid === params.userId) return;
@@ -180,4 +192,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
