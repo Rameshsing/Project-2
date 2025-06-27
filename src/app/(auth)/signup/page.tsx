@@ -20,6 +20,9 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 
 
 const FormSchema = z.object({
@@ -44,14 +47,36 @@ export default function SignupPage() {
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     setIsSubmitting(true);
-    // Mock signup logic
-    const timer = setTimeout(() => {
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        const user = userCredential.user;
+
+        await updateProfile(user, { displayName: data.displayName });
+
+        const userProfile = {
+            id: user.uid,
+            name: data.displayName,
+            email: data.email,
+            avatarUrl: `https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg`,
+            bio: "",
+            followers: 0,
+            following: 0,
+        };
+
+        await setDoc(doc(db, "users", user.uid), userProfile);
+
         toast({ title: "Account created successfully!" });
         router.push('/');
+    } catch (error: any) {
+        console.error("Signup error:", error);
+        toast({
+            variant: "destructive",
+            title: "Signup failed",
+            description: error.message,
+        });
+    } finally {
         setIsSubmitting(false);
-    }, 1000);
-
-    return () => clearTimeout(timer);
+    }
   }
 
   return (

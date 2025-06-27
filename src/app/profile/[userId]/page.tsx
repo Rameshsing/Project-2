@@ -9,57 +9,54 @@ import type { Post, UserProfile } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { UserPlus, UserCheck } from "lucide-react";
-
-const mockUsers: Record<string, UserProfile> = {
-    'user-2': { id: 'user-2', name: 'Jane Doe', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg', followers: 125, following: 88, bio: 'Lover of coffee and code. ☕' },
-    'user-3': { id: 'user-3', name: 'John Smith', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg', followers: 230, following: 150, bio: 'Building things for the web.' },
-    '12345': { id: '12345', name: 'Current User', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg', followers: 50, following: 42, bio: 'Just me.' }
-};
-
-const mockPostsByUser: Record<string, Post[]> = {
-    'user-2': [{
-        id: 'post-1',
-        author: { id: 'user-2', name: 'Jane Doe', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg' },
-        content: 'Just enjoying a beautiful day! ☀️ #blessed',
-        likes: 12,
-        comments: 3,
-        createdAt: '2 hours ago',
-        isLiked: false,
-    }],
-    'user-3': [{
-        id: 'post-2',
-        author: { id: 'user-3', name: 'John Smith', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg' },
-        content: 'Thinking about building a new side project in Next.js. Any ideas?',
-        likes: 45,
-        comments: 12,
-        createdAt: '5 hours ago',
-        isLiked: true,
-    }],
-    '12345': []
-}
-
+import { db } from "@/lib/firebase";
+import { doc, getDoc, collection, query, where, getDocs, orderBy } from "firebase/firestore";
 
 export default function ProfilePage({ params }: { params: { userId: string } }) {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, loading: authLoading } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFollowing, setIsFollowing] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    const timer = setTimeout(() => {
-      const profile = mockUsers[params.userId];
-      const userPosts = mockPostsByUser[params.userId] || [];
-      setUserProfile(profile);
-      setPosts(userPosts);
-      setLoading(false);
-      setIsFollowing(params.userId !== currentUser?.uid && Math.random() > 0.5);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [params.userId, currentUser?.uid]);
+    const fetchProfileData = async () => {
+      if(authLoading) return;
+      setLoading(true);
+      try {
+        const userDocRef = doc(db, "users", params.userId);
+        const userDoc = await getDoc(userDocRef);
+
+        if (userDoc.exists()) {
+          const profileData = { id: userDoc.id, ...userDoc.data() } as UserProfile;
+          setUserProfile(profileData);
+          
+          // Mock following state
+          setIsFollowing(params.userId !== currentUser?.uid && Math.random() > 0.5);
+
+          const postsQuery = query(collection(db, "posts"), where("author.id", "==", params.userId), orderBy("createdAt", "desc"));
+          const postsSnapshot = await getDocs(postsQuery);
+          const userPosts = postsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            isLiked: currentUser ? doc.data().likedBy?.includes(currentUser.uid) : false,
+          } as Post));
+          setPosts(userPosts);
+        } else {
+          setUserProfile(null);
+        }
+      } catch (error) {
+        console.error("Error fetching profile:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfileData();
+  }, [params.userId, currentUser, authLoading]);
 
   const handleFollowToggle = () => {
+      // Mock toggle for UI feedback
       setIsFollowing(prev => !prev);
   }
 

@@ -20,6 +20,8 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 
 const FormSchema = z.object({
@@ -42,14 +44,20 @@ export default function LoginPage() {
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     setIsSubmitting(true);
-    // Mock login logic
-    const timer = setTimeout(() => {
-        toast({ title: "Logged in successfully!" });
-        router.push('/');
+    try {
+      await signInWithEmailAndPassword(auth, data.email, data.password);
+      toast({ title: "Logged in successfully!" });
+      router.push('/');
+    } catch (error: any) {
+        console.error("Login error:", error);
+        toast({
+            variant: "destructive",
+            title: "Login failed",
+            description: "Invalid email or password.",
+        });
+    } finally {
         setIsSubmitting(false);
-    }, 1000);
-
-    return () => clearTimeout(timer);
+    }
   }
 
   return (

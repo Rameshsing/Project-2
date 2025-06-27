@@ -13,22 +13,18 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { moderateContent } from "@/ai/flows/moderate-content";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import type { Post } from "@/types";
+import { addDoc, collection } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 const FormSchema = z.object({
   content: z.string().min(1, "Post cannot be empty.").max(280, "Post cannot exceed 280 characters."),
 });
 
-interface CreatePostFormProps {
-    onPostCreated: (post: Post) => void;
-}
-
-export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
+export function CreatePostForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -41,7 +37,7 @@ export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
   });
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    if (!user) {
+    if (!user || !user.displayName) {
         toast({
             variant: "destructive",
             title: "Not authenticated",
@@ -51,31 +47,21 @@ export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
     }
     setIsSubmitting(true);
     try {
-      const moderationResult = await moderateContent({ text: data.content });
-      if (moderationResult.isHarmful) {
-        toast({
-          variant: "destructive",
-          title: "Inappropriate Content Detected",
-          description: `Reason: ${moderationResult.reason}. Please revise your post.`,
-        });
-        return;
-      }
-
-      const newPost: Post = {
-        id: new Date().toISOString(),
+      const newPostData = {
         author: {
           id: user.uid,
           name: user.displayName,
-          avatarUrl: `https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg`,
+          avatarUrl: user.photoURL ?? `https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg`,
         },
         content: data.content,
         likes: 0,
+        likedBy: [],
         comments: 0,
-        createdAt: "Just now",
-        isLiked: false,
+        createdAt: new Date().toISOString(),
       };
       
-      onPostCreated(newPost);
+      await addDoc(collection(db, "posts"), newPostData);
+      
       toast({
         title: "Post created!",
         description: "Your post is now live.",
@@ -112,6 +98,7 @@ export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
                       className="resize-none"
                       rows={3}
                       {...field}
+                      disabled={!user}
                     />
                   </FormControl>
                   <FormMessage />

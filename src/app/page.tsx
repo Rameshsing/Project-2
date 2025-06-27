@@ -5,50 +5,40 @@ import { CreatePostForm } from "@/components/CreatePostForm";
 import { PostCard } from "@/components/PostCard";
 import type { Post } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
-
-// Mock data for initial display
-const mockPosts: Post[] = [
-  {
-    id: 'post-1',
-    author: { id: 'user-2', name: 'Jane Doe', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg' },
-    content: 'Just enjoying a beautiful day! ☀️ #blessed',
-    likes: 12,
-    comments: 3,
-    createdAt: '2 hours ago',
-    isLiked: false,
-  },
-  {
-    id: 'post-2',
-    author: { id: 'user-3', name: 'John Smith', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg' },
-    content: 'Thinking about building a new side project in Next.js. Any ideas?',
-    likes: 45,
-    comments: 12,
-    createdAt: '5 hours ago',
-    isLiked: true,
-  },
-];
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
-    // Simulate fetching data
-    const timer = setTimeout(() => {
-      setPosts(mockPosts);
-      setLoading(false);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, []);
+    if (authLoading) return; // Wait for auth to finish before fetching
 
-  const handlePostCreated = (newPost: Post) => {
-    setPosts(prevPosts => [newPost, ...prevPosts]);
-  };
+    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const fetchedPosts = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          isLiked: user ? data.likedBy?.includes(user.uid) : false,
+        } as Post;
+      });
+      setPosts(fetchedPosts);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user, authLoading]);
 
   return (
     <div className="container mx-auto max-w-2xl py-8 px-4">
       <div className="space-y-8">
-        <CreatePostForm onPostCreated={handlePostCreated} />
+        <CreatePostForm />
         
         <div className="space-y-4">
           {loading ? (
@@ -61,7 +51,7 @@ export default function Home() {
           ) : (
             <div className="text-center text-muted-foreground py-10">
                 <p>No posts yet.</p>
-                <p>Follow users to see their posts here.</p>
+                <p>Be the first to post something!</p>
             </div>
           )}
         </div>
