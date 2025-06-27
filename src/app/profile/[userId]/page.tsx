@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +14,8 @@ import { UserPlus, UserCheck, Loader2 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, collection, query, where, getDocs, orderBy, writeBatch, increment } from "firebase/firestore";
 
-export default function ProfilePage({ params }: { params: { userId: string } }) {
+export default function ProfilePage() {
+  const params = useParams<{ userId: string }>();
   const { user: currentUser, loading: authLoading } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -23,7 +25,7 @@ export default function ProfilePage({ params }: { params: { userId: string } }) 
 
   useEffect(() => {
     const fetchProfileData = async () => {
-      if(authLoading) return;
+      if(authLoading || !params.userId) return;
       setLoading(true);
       try {
         const userDocRef = doc(db, "users", params.userId);
@@ -61,7 +63,7 @@ export default function ProfilePage({ params }: { params: { userId: string } }) 
   }, [params.userId, currentUser, authLoading]);
 
   const handleFollowToggle = async () => {
-    if (!currentUser || isFollowLoading) return;
+    if (!currentUser || isFollowLoading || !params.userId) return;
     setIsFollowLoading(true);
 
     const currentUserRef = doc(db, "users", currentUser.uid);
