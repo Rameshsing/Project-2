@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { UserPlus, UserCheck, Loader2 } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { doc, collection, query, where, orderBy, writeBatch, increment, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, orderBy, writeBatch, increment, onSnapshot } from "firebase/firestore";
 
 export default function ProfilePage() {
   const params = useParams<{ userId: string }>();
@@ -24,71 +24,80 @@ export default function ProfilePage() {
   const [isFollowLoading, setIsFollowLoading] = useState(false);
 
   useEffect(() => {
-    // We need both userId and the current authenticated user status before we can fetch anything.
-    // If we don't have a userId yet, or auth is still loading, do nothing.
-    // The loading skeleton will be displayed.
-    if (!params.userId || authLoading) {
+    const userId = params.userId;
+
+    if (!userId || authLoading) {
+      setLoading(true);
       return;
     }
 
-    // Set page to loading state for subsequent fetches
-    setLoading(true);
+    let unsubscribers: (() => void)[] = [];
+    
+    const fetchData = async () => {
+      setLoading(true);
+      setUserProfile(null);
+      setPosts([]);
+      
+      try {
+        const userDocRef = doc(db, "users", userId);
+        const userDoc = await getDoc(userDocRef);
 
-    // --- Set up listeners for all dynamic data ---
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          setUserProfile({
+            id: userDoc.id,
+            name: data.name ?? 'Unnamed User',
+            email: data.email ?? '',
+            avatarUrl: data.avatarUrl ?? '',
+            bio: data.bio ?? 'No bio yet.',
+            followers: data.followers ?? 0,
+            following: data.following ?? 0,
+          });
 
-    // 1. User Profile Listener (for follower counts etc.)
-    const userDocRef = doc(db, "users", params.userId);
-    const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        setUserProfile({
-          id: doc.id,
-          name: data.name ?? 'Unnamed User',
-          email: data.email ?? '',
-          avatarUrl: data.avatarUrl ?? '',
-          bio: data.bio ?? 'No bio yet.',
-          followers: data.followers ?? 0,
-          following: data.following ?? 0,
-        });
-      } else {
-        // This is where the "User not found" comes from.
+          const postsQuery = query(collection(db, "posts"), where("author.id", "==", userId), orderBy("createdAt", "desc"));
+          const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
+            const userPosts = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data(),
+              isLiked: currentUser ? doc.data().likedBy?.includes(currentUser.uid) : false,
+            } as Post));
+            setPosts(userPosts);
+          });
+          unsubscribers.push(unsubscribePosts);
+
+          if (currentUser && currentUser.uid !== userId) {
+            const followingDocRef = doc(db, "users", currentUser.uid, "following", userId);
+            const unsubscribeFollowing = onSnapshot(followingDocRef, (doc) => {
+                setIsFollowing(doc.exists());
+            });
+            unsubscribers.push(unsubscribeFollowing);
+          }
+          
+           const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
+                if (doc.exists()) {
+                    const data = doc.data();
+                    setUserProfile(p => p ? { ...p, followers: data.followers ?? 0, following: data.following ?? 0 } : null);
+                }
+            });
+           unsubscribers.push(unsubscribeUser);
+
+
+        } else {
+          setUserProfile(null);
+        }
+      } catch (error) {
+        console.error("Error fetching profile data:", error);
         setUserProfile(null);
-      }
-      // We set loading to false here, once we know if the user exists or not.
-      setLoading(false);
-    }, (error) => {
-        console.error("Error fetching user profile:", error);
-        setUserProfile(null);
+      } finally {
         setLoading(false);
-    });
-
-    // 2. Posts Listener
-    const postsQuery = query(collection(db, "posts"), where("author.id", "==", params.userId), orderBy("createdAt", "desc"));
-    const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
-      const userPosts = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        isLiked: currentUser ? doc.data().likedBy?.includes(currentUser.uid) : false,
-      } as Post));
-      setPosts(userPosts);
-    });
-
-    // 3. Following Status Listener
-    let unsubscribeFollowing = () => {};
-    if (currentUser && currentUser.uid !== params.userId) {
-        const followingDocRef = doc(db, "users", currentUser.uid, "following", params.userId);
-        unsubscribeFollowing = onSnapshot(followingDocRef, (doc) => {
-            setIsFollowing(doc.exists());
-        });
-    }
-
-    // Cleanup function to remove listeners when component unmounts or dependencies change
-    return () => {
-      unsubscribeUser();
-      unsubscribePosts();
-      unsubscribeFollowing();
+      }
     };
-    // Re-run this effect if the profile we are viewing changes, or if the current user logs in/out.
+
+    fetchData();
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
   }, [params.userId, currentUser, authLoading]);
 
 
@@ -126,7 +135,7 @@ export default function ProfilePage() {
     }
   };
 
-  if (loading || authLoading) {
+  if (loading) {
     return (
       <div className="container mx-auto max-w-3xl py-8 px-4">
         <Card className="mb-8 p-6">
