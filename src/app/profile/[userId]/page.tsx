@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { UserPlus, UserCheck, Loader2 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, collection, query, where, orderBy, writeBatch, increment, onSnapshot } from "firebase/firestore";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ProfilePage() {
   const params = useParams<{ userId: string }>();
@@ -22,69 +23,64 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     const userId = params.userId;
+    if (!userId) return;
 
-    if (!userId || authLoading) {
-      setLoading(true);
-      return;
-    }
-
+    setLoading(true);
     let unsubscribers: (() => void)[] = [];
-    
-    const fetchData = async () => {
-      setLoading(true);
-      setUserProfile(null);
-      setPosts([]);
-      
+
+    const fetchProfileData = async () => {
       try {
         const userDocRef = doc(db, "users", userId);
         const userDoc = await getDoc(userDocRef);
 
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          setUserProfile({
-            id: userDoc.id,
-            name: data.name ?? 'Unnamed User',
-            email: data.email ?? '',
-            avatarUrl: data.avatarUrl ?? '',
-            bio: data.bio ?? 'No bio yet.',
-            followers: data.followers ?? 0,
-            following: data.following ?? 0,
-          });
-
-          const postsQuery = query(collection(db, "posts"), where("author.id", "==", userId), orderBy("createdAt", "desc"));
-          const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
-            const userPosts = snapshot.docs.map(doc => ({
-              id: doc.id,
-              ...doc.data(),
-              isLiked: currentUser ? doc.data().likedBy?.includes(currentUser.uid) : false,
-            } as Post));
-            setPosts(userPosts);
-          });
-          unsubscribers.push(unsubscribePosts);
-
-          if (currentUser && currentUser.uid !== userId) {
-            const followingDocRef = doc(db, "users", currentUser.uid, "following", userId);
-            const unsubscribeFollowing = onSnapshot(followingDocRef, (doc) => {
-                setIsFollowing(doc.exists());
-            });
-            unsubscribers.push(unsubscribeFollowing);
-          }
-          
-           const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
-                if (doc.exists()) {
-                    const data = doc.data();
-                    setUserProfile(p => p ? { ...p, followers: data.followers ?? 0, following: data.following ?? 0 } : null);
-                }
-            });
-           unsubscribers.push(unsubscribeUser);
-
-
-        } else {
+        if (!userDoc.exists()) {
           setUserProfile(null);
+          setLoading(false);
+          return;
         }
+
+        // Set up listener for the user profile (for follower counts, etc.)
+        const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
+          const data = doc.data();
+          if (data) {
+            setUserProfile({
+              id: doc.id,
+              name: data.name ?? 'Unnamed User',
+              email: data.email ?? '',
+              avatarUrl: data.avatarUrl ?? '',
+              bio: data.bio ?? 'No bio yet.',
+              followers: data.followers ?? 0,
+              following: data.following ?? 0,
+            });
+          }
+        });
+        unsubscribers.push(unsubscribeUser);
+
+        // Set up listener for posts
+        const postsQuery = query(collection(db, "posts"), where("author.id", "==", userId), orderBy("createdAt", "desc"));
+        const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
+          const userPosts = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            isLiked: currentUser ? doc.data().likedBy?.includes(currentUser.uid) : false,
+          } as Post));
+          setPosts(userPosts);
+        });
+        unsubscribers.push(unsubscribePosts);
+
+        // Set up listener for follow status
+        if (currentUser && currentUser.uid !== userId) {
+          const followingDocRef = doc(db, "users", currentUser.uid, "following", userId);
+          const unsubscribeFollowing = onSnapshot(followingDocRef, (doc) => {
+            setIsFollowing(doc.exists());
+          });
+          unsubscribers.push(unsubscribeFollowing);
+        }
+
       } catch (error) {
         console.error("Error fetching profile data:", error);
         setUserProfile(null);
@@ -93,7 +89,10 @@ export default function ProfilePage() {
       }
     };
 
-    fetchData();
+    // Only fetch data once we know if a user is logged in or not
+    if (!authLoading) {
+      fetchProfileData();
+    }
 
     return () => {
       unsubscribers.forEach(unsub => unsub());
@@ -107,7 +106,6 @@ export default function ProfilePage() {
 
     const currentUserRef = doc(db, "users", currentUser.uid);
     const profileUserRef = doc(db, "users", params.userId);
-
     const followingRef = doc(db, "users", currentUser.uid, "following", params.userId);
     const followerRef = doc(db, "users", params.userId, "followers", currentUser.uid);
 
@@ -130,12 +128,17 @@ export default function ProfilePage() {
 
     } catch (error) {
         console.error("Failed to follow/unfollow:", error);
+        toast({
+            variant: "destructive",
+            title: "Action Failed",
+            description: "Could not follow or unfollow the user. This might be a permissions issue in your Firebase rules.",
+        });
     } finally {
         setIsFollowLoading(false);
     }
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="container mx-auto max-w-3xl py-8 px-4">
         <Card className="mb-8 p-6">
