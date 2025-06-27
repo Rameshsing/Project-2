@@ -1,40 +1,42 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Users can be read by anyone.
+    // User documents can only be created or updated by the user themselves.
     match /users/{userId} {
       allow read;
+      allow create, update: if request.auth != null && request.auth.uid == userId;
 
-      // Allow users to create their own profile.
-      allow create: if request.auth != null && request.auth.uid == userId;
-      
-      // Allow users to update their own profile info,
-      // OR allow another user to modify ONLY the `followers` count (for follow/unfollow).
-      allow update: if request.auth.uid == userId ||
-                     (request.auth != null &&
-                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers']));
-
-      // Subcollections for following/followers
-      match /followers/{followerId} {
-        allow read: if request.auth != null;
-        // A user can add/remove themselves from another user's followers list.
-        allow write: if request.auth != null && request.auth.uid == followerId;
-      }
+      // These subcollections track follows.
+      // A user can only modify their own 'following' list.
+      // A user can only add/remove themselves from another user's 'followers' list.
+      // Anyone can read these lists to get the counts.
       match /following/{followingId} {
-        allow read: if request.auth != null;
-        // A user can only manage their own 'following' list.
-        allow write: if request.auth != null && request.auth.uid == userId;
+        allow read;
+        allow create, delete: if request.auth != null && request.auth.uid == userId;
+      }
+      match /followers/{followerId} {
+        allow read;
+        allow create, delete: if request.auth != null && request.auth.uid == followerId;
       }
     }
 
+    // Posts can be read by anyone.
+    // They can only be created or deleted by the author.
+    // Any authenticated user can update a post (for liking).
     match /posts/{postId} {
       allow read;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null; // Allows liking and updating comment counts
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.author.id;
+      allow update: if request.auth != null; // Allows liking and comment count updates
       allow delete: if request.auth.uid == resource.data.author.id;
 
+      // Comments can be read by anyone.
+      // They can be created or deleted only by the author of the comment.
       match /comments/{commentId} {
         allow read;
-        allow create: if request.auth != null;
+        allow create: if request.auth != null && request.auth.uid == request.resource.data.author.id;
         allow delete: if request.auth.uid == resource.data.author.id;
       }
     }

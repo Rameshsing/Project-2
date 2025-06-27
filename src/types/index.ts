@@ -23,11 +23,9 @@ export type Comment = {
 }
 
 export type UserProfile = {
-    id: string;
+    id:string;
     name: string;
     email: string;
     avatarUrl: string;
-    followers: number;
-    following: number;
     bio: string;
 }

@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { UserPlus, UserCheck, Loader2 } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, collection, query, where, orderBy, writeBatch, increment, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, orderBy, onSnapshot, writeBatch, getDocs, deleteDoc, setDoc } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ProfilePage() {
@@ -20,17 +20,30 @@ export default function ProfilePage() {
   const { user: currentUser, loading: authLoading } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
   const { toast } = useToast();
 
+  const fetchFollowCounts = useCallback(async (userId: string) => {
+    const followersQuery = query(collection(db, "users", userId, "followers"));
+    const followingQuery = query(collection(db, "users", userId, "following"));
+    const [followersSnapshot, followingSnapshot] = await Promise.all([
+      getDocs(followersQuery),
+      getDocs(followingQuery)
+    ]);
+    setFollowerCount(followersSnapshot.size);
+    setFollowingCount(followingSnapshot.size);
+  }, []);
+
   useEffect(() => {
     const userId = params.userId;
-    if (!userId) return;
+    if (!userId || authLoading) return;
 
-    setLoading(true);
     let unsubscribers: (() => void)[] = [];
+    setLoading(true);
 
     const fetchProfileData = async () => {
       try {
@@ -43,24 +56,9 @@ export default function ProfilePage() {
           return;
         }
 
-        // Set up listener for the user profile (for follower counts, etc.)
-        const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
-          const data = doc.data();
-          if (data) {
-            setUserProfile({
-              id: doc.id,
-              name: data.name ?? 'Unnamed User',
-              email: data.email ?? '',
-              avatarUrl: data.avatarUrl ?? '',
-              bio: data.bio ?? 'No bio yet.',
-              followers: data.followers ?? 0,
-              following: data.following ?? 0,
-            });
-          }
-        });
-        unsubscribers.push(unsubscribeUser);
+        setUserProfile({ id: userDoc.id, ...userDoc.data() } as UserProfile);
+        await fetchFollowCounts(userId);
 
-        // Set up listener for posts
         const postsQuery = query(collection(db, "posts"), where("author.id", "==", userId), orderBy("createdAt", "desc"));
         const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
           const userPosts = snapshot.docs.map(doc => ({
@@ -72,7 +70,6 @@ export default function ProfilePage() {
         });
         unsubscribers.push(unsubscribePosts);
 
-        // Set up listener for follow status
         if (currentUser && currentUser.uid !== userId) {
           const followingDocRef = doc(db, "users", currentUser.uid, "following", userId);
           const unsubscribeFollowing = onSnapshot(followingDocRef, (doc) => {
@@ -83,48 +80,39 @@ export default function ProfilePage() {
 
       } catch (error) {
         console.error("Error fetching profile data:", error);
+        toast({ variant: "destructive", title: "Error", description: "Could not load profile." });
         setUserProfile(null);
       } finally {
         setLoading(false);
       }
     };
 
-    // Only fetch data once we know if a user is logged in or not
-    if (!authLoading) {
-      fetchProfileData();
-    }
+    fetchProfileData();
 
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [params.userId, currentUser, authLoading]);
+  }, [params.userId, currentUser, authLoading, fetchFollowCounts, toast]);
 
 
   const handleFollowToggle = async () => {
     if (!currentUser || isFollowLoading || !params.userId || currentUser.uid === params.userId) return;
     setIsFollowLoading(true);
 
-    const currentUserRef = doc(db, "users", currentUser.uid);
-    const profileUserRef = doc(db, "users", params.userId);
     const followingRef = doc(db, "users", currentUser.uid, "following", params.userId);
     const followerRef = doc(db, "users", params.userId, "followers", currentUser.uid);
 
     try {
-        const batch = writeBatch(db);
-
         if (isFollowing) {
-            batch.delete(followingRef);
-            batch.delete(followerRef);
-            batch.update(currentUserRef, { following: increment(-1) });
-            batch.update(profileUserRef, { followers: increment(-1) });
+            await deleteDoc(followingRef);
+            await deleteDoc(followerRef);
+            setFollowerCount(c => c - 1);
         } else {
-            batch.set(followingRef, { userId: params.userId, createdAt: new Date().toISOString() });
-            batch.set(followerRef, { userId: currentUser.uid, createdAt: new Date().toISOString() });
-            batch.update(currentUserRef, { following: increment(1) });
-            batch.update(profileUserRef, { followers: increment(1) });
+            await setDoc(followingRef, { userId: params.userId, createdAt: new Date().toISOString() });
+            await setDoc(followerRef, { userId: currentUser.uid, createdAt: new Date().toISOString() });
+            setFollowerCount(c => c + 1);
         }
-        
-        await batch.commit();
+        setIsFollowing(!isFollowing);
 
     } catch (error) {
         console.error("Failed to follow/unfollow:", error);
@@ -190,11 +178,11 @@ export default function ProfilePage() {
                   <p className="text-sm text-muted-foreground">Posts</p>
                 </div>
                  <div className="text-center">
-                  <p className="font-bold text-lg">{userProfile.followers}</p>
+                  <p className="font-bold text-lg">{followerCount}</p>
                   <p className="text-sm text-muted-foreground">Followers</p>
                 </div>
                  <div className="text-center">
-                  <p className="font-bold text-lg">{userProfile.following}</p>
+                  <p className="font-bold text-lg">{followingCount}</p>
                   <p className="text-sm text-muted-foreground">Following</p>
                 </div>
               </div>
