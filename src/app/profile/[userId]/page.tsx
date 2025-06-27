@@ -24,14 +24,19 @@ export default function ProfilePage() {
   const [isFollowLoading, setIsFollowLoading] = useState(false);
 
   useEffect(() => {
-    if (!params.userId) {
-        setLoading(false);
-        return;
-    };
+    // We need both userId and the current authenticated user status before we can fetch anything.
+    // If we don't have a userId yet, or auth is still loading, do nothing.
+    // The loading skeleton will be displayed.
+    if (!params.userId || authLoading) {
+      return;
+    }
 
+    // Set page to loading state for subsequent fetches
     setLoading(true);
 
-    // Listener for User Profile
+    // --- Set up listeners for all dynamic data ---
+
+    // 1. User Profile Listener (for follower counts etc.)
     const userDocRef = doc(db, "users", params.userId);
     const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
       if (doc.exists()) {
@@ -46,12 +51,18 @@ export default function ProfilePage() {
           following: data.following ?? 0,
         });
       } else {
+        // This is where the "User not found" comes from.
         setUserProfile(null);
       }
+      // We set loading to false here, once we know if the user exists or not.
       setLoading(false);
+    }, (error) => {
+        console.error("Error fetching user profile:", error);
+        setUserProfile(null);
+        setLoading(false);
     });
 
-    // Listener for Posts
+    // 2. Posts Listener
     const postsQuery = query(collection(db, "posts"), where("author.id", "==", params.userId), orderBy("createdAt", "desc"));
     const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
       const userPosts = snapshot.docs.map(doc => ({
@@ -62,7 +73,7 @@ export default function ProfilePage() {
       setPosts(userPosts);
     });
 
-    // Listener for Following Status
+    // 3. Following Status Listener
     let unsubscribeFollowing = () => {};
     if (currentUser && currentUser.uid !== params.userId) {
         const followingDocRef = doc(db, "users", currentUser.uid, "following", params.userId);
@@ -71,12 +82,14 @@ export default function ProfilePage() {
         });
     }
 
+    // Cleanup function to remove listeners when component unmounts or dependencies change
     return () => {
       unsubscribeUser();
       unsubscribePosts();
       unsubscribeFollowing();
     };
-  }, [params.userId, currentUser]);
+    // Re-run this effect if the profile we are viewing changes, or if the current user logs in/out.
+  }, [params.userId, currentUser, authLoading]);
 
 
   const handleFollowToggle = async () => {
