@@ -66,7 +66,7 @@ export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
         author: {
           id: user.uid,
           name: user.displayName,
-          avatarUrl: `https://placehold.co/40x40.png`,
+          avatarUrl: `https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg`,
         },
         content: data.content,
         likes: 0,

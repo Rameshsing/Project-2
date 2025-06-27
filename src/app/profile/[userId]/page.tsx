@@ -11,15 +11,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { UserPlus, UserCheck } from "lucide-react";
 
 const mockUsers: Record<string, UserProfile> = {
-    'user-2': { id: 'user-2', name: 'Jane Doe', avatarUrl: 'https://placehold.co/128x128.png', followers: 125, following: 88, bio: 'Lover of coffee and code. ☕' },
-    'user-3': { id: 'user-3', name: 'John Smith', avatarUrl: 'https://placehold.co/128x128.png', followers: 230, following: 150, bio: 'Building things for the web.' },
-    '12345': { id: '12345', name: 'Current User', avatarUrl: 'https://placehold.co/128x128.png', followers: 50, following: 42, bio: 'Just me.' }
+    'user-2': { id: 'user-2', name: 'Jane Doe', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg', followers: 125, following: 88, bio: 'Lover of coffee and code. ☕' },
+    'user-3': { id: 'user-3', name: 'John Smith', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg', followers: 230, following: 150, bio: 'Building things for the web.' },
+    '12345': { id: '12345', name: 'Current User', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg', followers: 50, following: 42, bio: 'Just me.' }
 };
 
 const mockPostsByUser: Record<string, Post[]> = {
     'user-2': [{
         id: 'post-1',
-        author: { id: 'user-2', name: 'Jane Doe', avatarUrl: 'https://placehold.co/40x40.png' },
+        author: { id: 'user-2', name: 'Jane Doe', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg' },
         content: 'Just enjoying a beautiful day! ☀️ #blessed',
         likes: 12,
         comments: 3,
@@ -28,7 +28,7 @@ const mockPostsByUser: Record<string, Post[]> = {
     }],
     'user-3': [{
         id: 'post-2',
-        author: { id: 'user-3', name: 'John Smith', avatarUrl: 'https://placehold.co/40x40.png' },
+        author: { id: 'user-3', name: 'John Smith', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg' },
         content: 'Thinking about building a new side project in Next.js. Any ideas?',
         likes: 45,
         comments: 12,

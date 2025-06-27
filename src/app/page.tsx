@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const mockPosts: Post[] = [
   {
     id: 'post-1',
-    author: { id: 'user-2', name: 'Jane Doe', avatarUrl: 'https://placehold.co/40x40.png' },
+    author: { id: 'user-2', name: 'Jane Doe', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg' },
     content: 'Just enjoying a beautiful day! ☀️ #blessed',
     likes: 12,
     comments: 3,
@@ -19,7 +19,7 @@ const mockPosts: Post[] = [
   },
   {
     id: 'post-2',
-    author: { id: 'user-3', name: 'John Smith', avatarUrl: 'https://placehold.co/40x40.png' },
+    author: { id: 'user-3', name: 'John Smith', avatarUrl: 'https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg' },
     content: 'Thinking about building a new side project in Next.js. Any ideas?',
     likes: 45,
     comments: 12,

@@ -22,7 +22,7 @@ export function Header() {
             <Button variant="ghost" asChild className="rounded-full h-10 w-10 p-0">
               <Link href={`/profile/${user.uid}`}>
                 <Avatar>
-                  <AvatarImage src={`https://placehold.co/40x40.png`} alt={user.displayName} data-ai-hint="profile picture"/>
+                  <AvatarImage src={`https://static.vecteezy.com/system/resources/previews/018/765/757/non_2x/user-profile-icon-in-flat-style-member-avatar-illustration-on-isolated-background-human-permission-sign-business-concept-vector.jpg`} alt={user.displayName} data-ai-hint="profile picture"/>
                   <AvatarFallback>{user.displayName?.charAt(0) ?? 'U'}</AvatarFallback>
                 </Avatar>
               </Link>
