@@ -58,10 +58,25 @@ function LoginPage() {
       // The page will re-render via the auth state change, showing the feed.
     } catch (error: any) {
         console.error("Login error:", error);
+        let errorMessage = "An unknown error occurred. Please try again.";
+        switch (error.code) {
+            case "auth/invalid-credential":
+                errorMessage = "Invalid email or password. Please check your credentials and try again.";
+                break;
+            case "auth/user-disabled":
+                errorMessage = "This account has been disabled.";
+                break;
+            case "auth/too-many-requests":
+                errorMessage = "Access to this account has been temporarily disabled due to many failed login attempts. You can try again later.";
+                break;
+            default:
+                // Use the default message for other errors
+                break;
+        }
         toast({
             variant: "destructive",
-            title: "Login failed",
-            description: "Invalid email or password.",
+            title: "Login Failed",
+            description: errorMessage,
         });
     } finally {
         setIsSubmitting(false);
