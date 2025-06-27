@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -8,9 +9,9 @@ import { PostCard } from "@/components/PostCard";
 import type { Post, UserProfile } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
-import { UserPlus, UserCheck } from "lucide-react";
+import { UserPlus, UserCheck, Loader2 } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs, orderBy, writeBatch, increment } from "firebase/firestore";
 
 export default function ProfilePage({ params }: { params: { userId: string } }) {
   const { user: currentUser, loading: authLoading } = useAuth();
@@ -18,6 +19,7 @@ export default function ProfilePage({ params }: { params: { userId: string } }) 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [isFollowLoading, setIsFollowLoading] = useState(false);
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -31,8 +33,11 @@ export default function ProfilePage({ params }: { params: { userId: string } }) 
           const profileData = { id: userDoc.id, ...userDoc.data() } as UserProfile;
           setUserProfile(profileData);
           
-          // Mock following state
-          setIsFollowing(params.userId !== currentUser?.uid && Math.random() > 0.5);
+          if (currentUser && currentUser.uid !== params.userId) {
+              const followingDocRef = doc(db, "users", currentUser.uid, "following", params.userId);
+              const followingDoc = await getDoc(followingDocRef);
+              setIsFollowing(followingDoc.exists());
+          }
 
           const postsQuery = query(collection(db, "posts"), where("author.id", "==", params.userId), orderBy("createdAt", "desc"));
           const postsSnapshot = await getDocs(postsQuery);
@@ -55,10 +60,49 @@ export default function ProfilePage({ params }: { params: { userId: string } }) 
     fetchProfileData();
   }, [params.userId, currentUser, authLoading]);
 
-  const handleFollowToggle = () => {
-      // Mock toggle for UI feedback
-      setIsFollowing(prev => !prev);
-  }
+  const handleFollowToggle = async () => {
+    if (!currentUser || isFollowLoading) return;
+    setIsFollowLoading(true);
+
+    const currentUserRef = doc(db, "users", currentUser.uid);
+    const profileUserRef = doc(db, "users", params.userId);
+
+    const followingRef = doc(db, "users", currentUser.uid, "following", params.userId);
+    const followerRef = doc(db, "users", params.userId, "followers", currentUser.uid);
+
+    try {
+        const batch = writeBatch(db);
+        const newIsFollowing = !isFollowing;
+
+        if (newIsFollowing) {
+            batch.set(followingRef, { userId: params.userId });
+            batch.set(followerRef, { userId: currentUser.uid });
+            batch.update(currentUserRef, { following: increment(1) });
+            batch.update(profileUserRef, { followers: increment(1) });
+        } else {
+            batch.delete(followingRef);
+            batch.delete(followerRef);
+            batch.update(currentUserRef, { following: increment(-1) });
+            batch.update(profileUserRef, { followers: increment(-1) });
+        }
+        
+        await batch.commit();
+
+        setIsFollowing(newIsFollowing);
+        setUserProfile(prevProfile => {
+            if (!prevProfile) return null;
+            return {
+                ...prevProfile,
+                followers: prevProfile.followers + (newIsFollowing ? 1 : -1)
+            };
+        });
+
+    } catch (error) {
+        console.error("Failed to follow/unfollow:", error);
+    } finally {
+        setIsFollowLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -100,8 +144,8 @@ export default function ProfilePage({ params }: { params: { userId: string } }) 
               <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-4">
                 <h1 className="text-3xl font-bold font-headline">{userProfile.name}</h1>
                 {!isOwnProfile && (
-                    <Button onClick={handleFollowToggle} variant={isFollowing ? 'secondary' : 'default'}>
-                        {isFollowing ? <UserCheck className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                    <Button onClick={handleFollowToggle} variant={isFollowing ? 'secondary' : 'default'} disabled={isFollowLoading}>
+                        {isFollowLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : (isFollowing ? <UserCheck className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />)}
                         {isFollowing ? 'Following' : 'Follow'}
                     </Button>
                 )}
