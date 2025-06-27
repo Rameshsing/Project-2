@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -135,7 +136,7 @@ export default function SignupPage() {
             </Form>
             <p className="mt-6 text-center text-sm text-muted-foreground">
                 Already have an account?{' '}
-                <Link href="/login" className="font-medium text-primary hover:underline">
+                <Link href="/" className="font-medium text-primary hover:underline">
                     Login
                 </Link>
             </p>

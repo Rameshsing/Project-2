@@ -1,3 +1,4 @@
+
 "use client";
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -27,7 +28,7 @@ export function Header() {
     try {
       await signOut(auth);
       toast({ title: "Logged out successfully." });
-      router.push('/login');
+      router.push('/');
     } catch (error) {
       toast({ variant: "destructive", title: "Logout failed." });
     }
@@ -69,7 +70,7 @@ export function Header() {
             </DropdownMenu>
           ) : (
             <Button asChild>
-              <Link href="/login">
+              <Link href="/">
                 <LogIn className="mr-2 h-4 w-4" /> Login
               </Link>
             </Button>
