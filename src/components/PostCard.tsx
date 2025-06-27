@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 import type { Post, Comment } from '@/types';
 import { useAuth } from '@/hooks/use-auth';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc, increment, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, increment, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, onSnapshot, writeBatch } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -28,13 +28,25 @@ interface PostCardProps {
   post: Post;
 }
 
-export function PostCard({ post }: PostCardProps) {
+export function PostCard({ post: initialPost }: PostCardProps) {
     const { user } = useAuth();
     const { toast } = useToast();
+    const [post, setPost] = useState(initialPost);
     const [isLiking, setIsLiking] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [comments, setComments] = useState<Comment[]>([]);
     const [commentsLoading, setCommentsLoading] = useState(false);
+
+    const commentForm = useForm<z.infer<typeof CommentFormSchema>>({
+      resolver: zodResolver(CommentFormSchema),
+      defaultValues: { text: "" },
+    });
+    const isSubmittingComment = commentForm.formState.isSubmitting;
+
+    // This effect synchronizes the local state when the parent component's data changes.
+    useEffect(() => {
+        setPost(initialPost);
+    }, [initialPost]);
 
     const handleLike = async () => {
         if (!user) {
@@ -45,21 +57,28 @@ export function PostCard({ post }: PostCardProps) {
 
         setIsLiking(true);
         const postRef = doc(db, "posts", post.id);
+        const newIsLiked = !post.isLiked;
+        const newLikesCount = post.isLiked ? post.likes - 1 : post.likes + 1;
+
+        // Optimistic update
+        setPost(p => ({...p, isLiked: newIsLiked, likes: newLikesCount }));
 
         try {
-            if (post.isLiked) {
-                await updateDoc(postRef, {
-                    likes: increment(-1),
-                    likedBy: arrayRemove(user.uid)
-                });
-            } else {
+            if (newIsLiked) {
                 await updateDoc(postRef, {
                     likes: increment(1),
                     likedBy: arrayUnion(user.uid)
                 });
+            } else {
+                await updateDoc(postRef, {
+                    likes: increment(-1),
+                    likedBy: arrayRemove(user.uid)
+                });
             }
         } catch (error) {
             console.error("Error liking post:", error);
+            // Revert on failure
+            setPost(p => ({...p, isLiked: !newIsLiked, likes: post.likes }));
             toast({ variant: "destructive", title: "Something went wrong." });
         } finally {
             setIsLiking(false);
@@ -74,26 +93,33 @@ export function PostCard({ post }: PostCardProps) {
                 const fetchedComments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment));
                 setComments(fetchedComments);
                 setCommentsLoading(false);
+            }, (error) => {
+                console.error("Error fetching comments:", error);
+                setCommentsLoading(false);
+                toast({ variant: "destructive", title: "Could not load comments." });
             });
             return () => unsubscribe();
         }
-    }, [showComments, post.id]);
-
-    const commentForm = useForm<z.infer<typeof CommentFormSchema>>({
-      resolver: zodResolver(CommentFormSchema),
-      defaultValues: { text: "" },
-    });
+    }, [showComments, post.id, toast]);
 
     async function onCommentSubmit(data: z.infer<typeof CommentFormSchema>) {
         if (!user || !user.displayName) {
             toast({ variant: "destructive", title: "You must be logged in to comment." });
             return;
         }
+
         const postRef = doc(db, "posts", post.id);
         const commentsColRef = collection(postRef, "comments");
-
+        
+        const originalCommentCount = post.comments;
+        // Optimistic UI update for comment count
+        setPost(p => ({...p, comments: p.comments + 1}));
+        commentForm.reset();
+        
         try {
-            await addDoc(commentsColRef, {
+            const batch = writeBatch(db);
+            const newCommentDoc = doc(commentsColRef);
+            batch.set(newCommentDoc, {
                 text: data.text,
                 author: {
                     id: user.uid,
@@ -102,9 +128,11 @@ export function PostCard({ post }: PostCardProps) {
                 },
                 createdAt: new Date().toISOString(),
             });
-            await updateDoc(postRef, { comments: increment(1) });
-            commentForm.reset();
+            batch.update(postRef, { comments: increment(1) });
+            await batch.commit();
         } catch (error) {
+            // Revert on failure
+            setPost(p => ({...p, comments: originalCommentCount}));
             console.error("Error adding comment:", error);
             toast({ variant: "destructive", title: "Could not add comment." });
         }
@@ -161,8 +189,8 @@ export function PostCard({ post }: PostCardProps) {
                             </FormItem>
                         )}
                         />
-                        <Button type="submit" size="icon" disabled={commentForm.formState.isSubmitting}>
-                           {commentForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        <Button type="submit" size="icon" disabled={isSubmittingComment}>
+                           {isSubmittingComment ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                         </Button>
                     </form>
                 </Form>

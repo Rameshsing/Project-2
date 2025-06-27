@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { UserPlus, UserCheck, Loader2 } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, collection, query, where, getDocs, orderBy, writeBatch, increment } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs, orderBy, writeBatch, increment, onSnapshot } from "firebase/firestore";
 
 export default function ProfilePage() {
   const params = useParams<{ userId: string }>();
@@ -24,46 +24,51 @@ export default function ProfilePage() {
   const [isFollowLoading, setIsFollowLoading] = useState(false);
 
   useEffect(() => {
-    const fetchProfileData = async () => {
-      if(authLoading || !params.userId) return;
-      setLoading(true);
-      try {
-        const userDocRef = doc(db, "users", params.userId);
-        const userDoc = await getDoc(userDocRef);
+    if (!params.userId) return;
 
-        if (userDoc.exists()) {
-          const profileData = { id: userDoc.id, ...userDoc.data() } as UserProfile;
-          setUserProfile(profileData);
-          
-          if (currentUser && currentUser.uid !== params.userId) {
-              const followingDocRef = doc(db, "users", currentUser.uid, "following", params.userId);
-              const followingDoc = await getDoc(followingDocRef);
-              setIsFollowing(followingDoc.exists());
-          }
-
-          const postsQuery = query(collection(db, "posts"), where("author.id", "==", params.userId), orderBy("createdAt", "desc"));
-          const postsSnapshot = await getDocs(postsQuery);
-          const userPosts = postsSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            isLiked: currentUser ? doc.data().likedBy?.includes(currentUser.uid) : false,
-          } as Post));
-          setPosts(userPosts);
-        } else {
-          setUserProfile(null);
-        }
-      } catch (error) {
-        console.error("Error fetching profile:", error);
-      } finally {
-        setLoading(false);
+    const userDocRef = doc(db, "users", params.userId);
+    const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
+      if (doc.exists()) {
+        setUserProfile({ id: doc.id, ...doc.data() } as UserProfile);
+      } else {
+        setUserProfile(null);
       }
-    };
+      setLoading(false);
+    });
 
-    fetchProfileData();
-  }, [params.userId, currentUser, authLoading]);
+    return () => unsubscribeUser();
+  }, [params.userId]);
+
+
+  useEffect(() => {
+    if (!params.userId || !currentUser) return;
+
+    const followingDocRef = doc(db, "users", currentUser.uid, "following", params.userId);
+    const unsubscribeFollowing = onSnapshot(followingDocRef, (doc) => {
+      setIsFollowing(doc.exists());
+    });
+
+    return () => unsubscribeFollowing();
+  }, [params.userId, currentUser]);
+
+
+  useEffect(() => {
+    if (!params.userId) return;
+    const postsQuery = query(collection(db, "posts"), where("author.id", "==", params.userId), orderBy("createdAt", "desc"));
+    const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
+      const userPosts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        isLiked: currentUser ? doc.data().likedBy?.includes(currentUser.uid) : false,
+      } as Post));
+      setPosts(userPosts);
+    });
+
+    return () => unsubscribePosts();
+  }, [params.userId, currentUser]);
 
   const handleFollowToggle = async () => {
-    if (!currentUser || isFollowLoading || !params.userId) return;
+    if (!currentUser || isFollowLoading || !params.userId || currentUser.uid === params.userId) return;
     setIsFollowLoading(true);
 
     const currentUserRef = doc(db, "users", currentUser.uid);
@@ -74,30 +79,20 @@ export default function ProfilePage() {
 
     try {
         const batch = writeBatch(db);
-        const newIsFollowing = !isFollowing;
 
-        if (newIsFollowing) {
-            batch.set(followingRef, { userId: params.userId });
-            batch.set(followerRef, { userId: currentUser.uid });
-            batch.update(currentUserRef, { following: increment(1) });
-            batch.update(profileUserRef, { followers: increment(1) });
-        } else {
+        if (isFollowing) {
             batch.delete(followingRef);
             batch.delete(followerRef);
             batch.update(currentUserRef, { following: increment(-1) });
             batch.update(profileUserRef, { followers: increment(-1) });
+        } else {
+            batch.set(followingRef, { userId: params.userId, createdAt: new Date().toISOString() });
+            batch.set(followerRef, { userId: currentUser.uid, createdAt: new Date().toISOString() });
+            batch.update(currentUserRef, { following: increment(1) });
+            batch.update(profileUserRef, { followers: increment(1) });
         }
         
         await batch.commit();
-
-        setIsFollowing(newIsFollowing);
-        setUserProfile(prevProfile => {
-            if (!prevProfile) return null;
-            return {
-                ...prevProfile,
-                followers: prevProfile.followers + (newIsFollowing ? 1 : -1)
-            };
-        });
 
     } catch (error) {
         console.error("Failed to follow/unfollow:", error);
@@ -106,7 +101,7 @@ export default function ProfilePage() {
     }
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="container mx-auto max-w-3xl py-8 px-4">
         <Card className="mb-8 p-6">
@@ -145,7 +140,7 @@ export default function ProfilePage() {
             <div className="flex-1 text-center sm:text-left">
               <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-4">
                 <h1 className="text-3xl font-bold font-headline">{userProfile.name}</h1>
-                {!isOwnProfile && (
+                {!isOwnProfile && currentUser && (
                     <Button onClick={handleFollowToggle} variant={isFollowing ? 'secondary' : 'default'} disabled={isFollowLoading}>
                         {isFollowLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : (isFollowing ? <UserCheck className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />)}
                         {isFollowing ? 'Following' : 'Follow'}
@@ -185,3 +180,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+
